@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 from exceptions import (
     CanNotConnect, EmptyListError, JsonError, HTTPStatusError, CanNotSendMsg
-    )
+)
 
 load_dotenv()
 

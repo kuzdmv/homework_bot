@@ -3,16 +3,22 @@ import requests
 import os
 import time
 import sys
+
+from http import HTTPStatus
+
 import telegram
 
-from logging import StreamHandler
 from dotenv import load_dotenv
+
+from exceptions import (
+    CanNotConnect, EmptyListError, JsonError, HTTPStatusError, CanNotSendMsg
+    )
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-handler = StreamHandler(stream=sys.stdout)
+handler = logging.StreamHandler(stream=sys.stdout)
 logger.addHandler(handler)
 formatter = logging.Formatter(
     '%(asctime)s - %(levelname)s - %(message)s'
@@ -43,33 +49,44 @@ def send_message(bot, message):
     try:
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
         logger.info('Сообщение отправлено')
-    except Exception as error:
-        send_errors.append(f'{error}')
-        raise telegram.TelegramError(f'{error}')
+    except telegram.TelegramError as error:
+        if str(CanNotSendMsg(error)) not in send_errors:
+            send_errors.append(str(CanNotSendMsg(error)))
+        raise CanNotSendMsg(error)
 
 
 def get_api_answer(current_timestamp):
     """Делаем запрос на сервер."""
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
-    homework_statuses = requests.get(ENDPOINT, headers=HEADERS, params=params)
-    if homework_statuses.status_code != 200:
-        raise Exception(
-            'Нет ответа от сервера с домашней работой'
+    try:
+        homework_statuses = requests.get(
+            ENDPOINT, headers=HEADERS, params=params
         )
-    return homework_statuses.json()
+    # pytest ругается на homework_statuses.raise_for_status()
+    except TimeoutError as error:
+        raise CanNotConnect(error)
+    except ConnectionError as error:
+        raise CanNotConnect(error)
+    if homework_statuses.status_code != HTTPStatus.OK:
+        raise HTTPStatusError(homework_statuses.status_code)
+    try:
+        homework = homework_statuses.json()
+    except ValueError:
+        raise JsonError
+    return homework
 
 
 def check_response(response):
     """Получаем из данных с полученных информацию о ДЗ."""
-    if type(response) != dict:
+    if type(response) is not dict:
         raise TypeError(
             'Получен ошибочный тип данных с сревера (необходим словарь)'
         )
     if not len(response):
-        raise Exception('Получен пустой словарь')
+        raise EmptyListError
     homeworks = response.get('homeworks')
-    if type(homeworks) != list:
+    if type(homeworks) is not list:
         raise TypeError(
             'Получен ошибочный тип данных с сревера (необходим список)'
         )
@@ -84,7 +101,7 @@ def parse_status(homework):
         raise KeyError('В полученном ответе нет информации о статусе')
     homework_name = homework.get('homework_name')
     homework_status = homework.get('status')
-    if homework_status not in HOMEWORK_STATUSES.keys():
+    if homework_status not in HOMEWORK_STATUSES:
         raise KeyError(
             'В полученном ответе указан не изаестный тип статуса'
         )

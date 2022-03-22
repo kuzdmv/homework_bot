@@ -3,18 +3,17 @@ import requests
 import os
 import time
 import sys
-
-from http import HTTPStatus
+import json
+import http
 
 import telegram
-
-from dotenv import load_dotenv
+import dotenv
 
 from exceptions import (
     CanNotConnect, EmptyListError, JsonError, HTTPStatusError, CanNotSendMsg
 )
 
-load_dotenv()
+dotenv.load_dotenv()
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -63,16 +62,13 @@ def get_api_answer(current_timestamp):
         homework_statuses = requests.get(
             ENDPOINT, headers=HEADERS, params=params
         )
-    # pytest ругается на homework_statuses.raise_for_status()
-    except TimeoutError as error:
+    except requests.exceptions.RequestException as error:
         raise CanNotConnect(error)
-    except ConnectionError as error:
-        raise CanNotConnect(error)
-    if homework_statuses.status_code != HTTPStatus.OK:
+    if homework_statuses.status_code != http.HTTPStatus.OK:
         raise HTTPStatusError(homework_statuses.status_code)
     try:
         homework = homework_statuses.json()
-    except ValueError:
+    except json.decoder.JSONDecodeError:
         raise JsonError
     return homework
 
